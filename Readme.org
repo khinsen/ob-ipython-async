@@ -1,0 +1,17 @@
+* Asynchronous execution of IPython source code blocks
+
+This Emacs lisp module adds the possibility of asynchronous execution of IPython source code blocks to ~ob-ipython.el~ which is part of org-mode.
+
+I started out using code for the same purpose fom John Kitchin's [[https://github.com/jkitchin/scimax/blob/master/scimax-org-babel-ipython.el][scimax]] package. I had a few problems with it, I had different feature requirements, and I wanted to be able to extend this for languages other than IPython in the future. So I ended up analyzing the code and re-composing the bits that I needed, making modifications along the way. So my code is heavily inspired by John's, but not compatible.
+
+The main differences to John's versions are
+
+ - Asynchronous execution is chosen by setting a variable, not by using different commands. This means that all the ~org-babel-execute-...~ perform asynchronous execution.
+
+ - The ~silent~ result option is supported. This is particularly well suited for code blocks that define classes or functions but do not compute anything.
+
+ - The ~async-...~ links have no function, they are just for information.
+
+ - Automatically generated source block names are uuids.
+
+At this time, this is code for personal use, insufficiently tested and even more insufficiently documented. Unsupported as well. If anyone finds it useful nevertheless, go ahead and use it.
