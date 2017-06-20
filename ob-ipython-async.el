@@ -287,4 +287,22 @@ It replaces the output in the results."
   (setq *ob-ipython-async-running-task* nil
 	*ob-ipython-async-queue* '()))
 
+;;
+;; REPL setup
+;;
+;; The following function replaces the version from ob-ipython.
+;; It adds the session name to the REPL buffer name, making it
+;; possible to have multiple named sessions, each with its own REPL.
+(defun ob-ipython--create-repl (name)
+  ;; TODO: hack while we wait on
+  ;; https://github.com/jupyter/jupyter_console/issues/93
+  (let ((proc-name (format "IPython-%s" name))
+        (prev (getenv "JUPYTER_CONSOLE_TEST")))
+    (setenv "JUPYTER_CONSOLE_TEST" "1")
+    (python-shell-make-comint
+     (s-join " " (ob-ipython--kernel-repl-cmd name))
+     proc-name nil)
+    (setenv "JUPYTER_CONSOLE_TEST" prev)
+    (format "*%s*" proc-name)))
+
 (provide 'ob-ipython-async)
