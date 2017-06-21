@@ -297,12 +297,15 @@ It replaces the output in the results."
   ;; TODO: hack while we wait on
   ;; https://github.com/jupyter/jupyter_console/issues/93
   (let ((proc-name (format "IPython-%s" name))
-        (prev (getenv "JUPYTER_CONSOLE_TEST")))
+        (prev (getenv "JUPYTER_CONSOLE_TEST"))
+        buffer-name)
     (setenv "JUPYTER_CONSOLE_TEST" "1")
-    (python-shell-make-comint
-     (s-join " " (ob-ipython--kernel-repl-cmd name))
-     proc-name nil)
+    (setq buffer-name
+          (python-shell-make-comint
+           (s-join " " (ob-ipython--kernel-repl-cmd name))
+           proc-name nil))
     (setenv "JUPYTER_CONSOLE_TEST" prev)
-    (format "*%s*" proc-name)))
+    buffer-name))
+
 
 (provide 'ob-ipython-async)
