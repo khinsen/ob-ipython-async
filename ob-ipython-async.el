@@ -307,5 +307,27 @@ It replaces the output in the results."
     (setenv "JUPYTER_CONSOLE_TEST" prev)
     buffer-name))
 
+;;
+;; Reinitialize everything
+;;
+(defun ob-ipython-kill-all ()
+  "Kill all processes and buffers used for IPython evaluation,
+including the REPL buffers."
+  (interactive)
+  (let ((ipython-buffers
+           (--filter (or (string-prefix-p "*ob-ipython-" (buffer-name it))
+                         (string-prefix-p "*IPython-" (buffer-name it)))
+                     (buffer-list)))
+        (prev kill-buffer-query-functions))
+    (setq kill-buffer-query-functions
+          (remq 'process-kill-buffer-query-function
+                kill-buffer-query-functions))
+    (--map (progn
+             (message "Killing %s" (buffer-name it))
+             (kill-buffer it))
+           ipython-buffers)
+    (setq kill-buffer-query-functions prev)
+    (ob-ipython-clear-async-queue)))
+
 
 (provide 'ob-ipython-async)
