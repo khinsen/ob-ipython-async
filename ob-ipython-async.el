@@ -8,26 +8,29 @@
 ;; Configuration
 ;;
 
-;; Set this to nil to deactivate asynchronous execution. The main reason I can imagine
-;; is interdependence of code blocks (IPython or other) via header arguments, which is
-;; not supported in asynchronous mode.
+;; Set this to nil to deactivate asynchronous execution. The main
+;; reason I can imagine is interdependence of code blocks (IPython or
+;; other) via header arguments, which is not supported in asynchronous
+;; mode.
 (defcustom org-babel-async-ipython t
   "If non-nil run ipython asynchronously.")
 
 ;; In the unlikely case that you use files or directories named
 ;; "ipython-inline-images", you can change this definition.
 (defcustom org-babel-ipython-inline-image-directory "ipython-inline-images"
-  "Name of the directory holding inlined images returned as results from IPython")
+  "Name of the directory holding inlined images returned as results
+from IPython")
 
 ;;
 ;; End of configuration
 ;;
 
 (defvar *ob-ipython-async-queue* (make-hash-table :test 'equal)
-  "Queue of tasks to run.")
+  "Queue of tasks to run for each session.")
 
 (defvar *ob-ipython-async-running-task* (make-hash-table :test 'equal)
-  "The currently running task, defined by (buffer body params name).")
+  "The currently running task for each session, defined by
+(buffer body params name).")
 
 ;;
 ;; Management of inline images
@@ -83,7 +86,8 @@ Returns an org-link to the file."
 
 (defun ob-ipython--format-result (result result-type)
   "Format a RESULT from an ipython cell.
-Return RESULT-TYPE if specified. This comes from a header argument :ob-ipython-results"
+Return RESULT-TYPE if specified. This comes from a header argument
+:ob-ipython-results"
   (cl-flet ((format-result (type value)
              (case type
                ('text/plain (concat value "\n"))
@@ -283,7 +287,8 @@ It replaces the output in the results."
 (defun ob-ipython-clear-async-queue (session)
   "Clear the queue for a session and all pending results."
   (interactive)
-  (loop for (buffer body params name) in (gethash session *ob-ipython-async-queue* nil)
+  (loop for (buffer body params name) in
+                         (gethash session *ob-ipython-async-queue* nil)
 	do
 	(save-window-excursion
 	  (with-current-buffer buffer
