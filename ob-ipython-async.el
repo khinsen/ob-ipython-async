@@ -2,6 +2,7 @@
 (require 'ob-ipython)
 (require 'dash)
 (require 'cl)
+(require 'subr-x)
 
 ;;
 ;; Configuration
@@ -22,10 +23,10 @@
 ;; End of configuration
 ;;
 
-(defvar *ob-ipython-async-queue* '()
+(defvar *ob-ipython-async-queue* (make-hash-table :test 'equal)
   "Queue of tasks to run.")
 
-(defvar *ob-ipython-async-running-task* nil
+(defvar *ob-ipython-async-running-task* (make-hash-table :test 'equal)
   "The currently running task, defined by (buffer body params name).")
 
 ;;
@@ -147,6 +148,7 @@ The default is `ob-ipython-uuid-generator'.")
     (org-babel-ipython-initiate-session session params)
     ;; Clean up obsolete results
     (ob-ipython--delete-inline-image-files)
+    (message "Executing/queuing IPython task %s in session %s" name session)
     (if org-babel-async-ipython
         ;; Queue the code for execution and return a link informing
         ;; about the task's status (queued/running).
@@ -194,22 +196,24 @@ The default is `ob-ipython-uuid-generator'.")
 (defun ob-ipython--queue-src-block (body params name)
   "Add a source code block to the execution queue. Start execution if no other block
    is being execution. Return a link indicating the state (queued/running)."
-  (let* ((result-type (cdr (assoc :result-type params))))
-    (add-to-list '*ob-ipython-async-queue*
-                 (list (current-buffer) body params name)
-                 t)
-    (if (ob-ipython--process-queue nil)
+  (let* ((result-type (cdr (assoc :result-type params)))
+         (session (ob-ipython--normalize-session (cdr (assoc :session params))))
+         (prev-queue (gethash session *ob-ipython-async-queue* nil))
+         (new-queue (append prev-queue
+                            (list (list (current-buffer) body params name)))))
+    (puthash session new-queue *ob-ipython-async-queue*)
+
+    (if (ob-ipython--process-queue session nil)
         (format "[[async-running: %s]]" name)
       (format "[[async-queued: %s]]" name))))
 
-(defun ob-ipython--process-queue (update-link)
+(defun ob-ipython--process-queue (session update-link)
   "If no task is running, start the first one on the waiting list and
 return t. Otherwise, do nothing and return nil. If update-link is non-nil, 
 change the task's async link from 'queued' to 'running'."
-  (-when-let* ((not-running (not *ob-ipython-async-running-task*))
-               (task (pop *ob-ipython-async-queue*))
-               ((buffer body params name) task)
-               (session (ob-ipython--normalize-session (cdr (assoc :session params)))))
+  (-when-let* ((not-running (not (gethash session *ob-ipython-async-running-task* nil)))
+               (task (pop (gethash session *ob-ipython-async-queue*)))
+               ((buffer body params name) task))
     (when (and update-link
                (not (member "silent" (cdr (assoc :result-params params)))))
       (with-current-buffer buffer
@@ -217,8 +221,8 @@ change the task's async link from 'queued' to 'running'."
           (org-babel-goto-named-src-block name)
           (search-forward (format "[[async-queued: %s]]" name))
           (replace-match (format "[[async-running: %s]]" name)))))
-    (setq *ob-ipython-async-running-task* task)
-    (message "Running IPython task %s" name)
+    (puthash session task *ob-ipython-async-running-task*)
+    (message "Running queued IPython task %s in session %s" name session)
     (let ((url-request-data body)
           (url-request-method "POST"))
       (url-retrieve
@@ -226,15 +230,16 @@ change the task's async link from 'queued' to 'running'."
                ob-ipython-driver-hostname
                ob-ipython-driver-port
                session)
-       'ob-ipython--async-callback))
+       'ob-ipython--async-callback
+       (list session)))
     t))
 
-(defun ob-ipython--async-callback (status &rest args)
+(defun ob-ipython--async-callback (status session)
   "Callback function for `ob-ipython--execute-request-asynchronously'.
 It replaces the output in the results."
-  (-let* ((current-task *ob-ipython-async-running-task*)
+  (-let* ((current-task (gethash session *ob-ipython-async-running-task*))
           ((buffer body params name) current-task)
-          (ret (ob-ipython--eval (ob-ipython--parse-retrieved-data buffer name)))
+          (ret (ob-ipython--eval (ob-ipython--parse-retrieved-data session buffer name)))
           (result (cdr (assoc :result ret)))
           (output (cdr (assoc :output ret)))
           (result-type (cdr (assoc :result-type params)))
@@ -257,11 +262,11 @@ It replaces the output in the results."
             (org-babel-goto-named-result name)
             (forward-line)
             (org-flag-drawer nil)))))
-    (setq *ob-ipython-async-running-task* nil)
+    (remhash session *ob-ipython-async-running-task*)
     ;; Process the rest of the task queue.
-    (ob-ipython--process-queue t)))
+    (ob-ipython--process-queue session t)))
 
-(defun ob-ipython--parse-retrieved-data (buffer name)
+(defun ob-ipython--parse-retrieved-data (session buffer name)
   "Parse the JSON data structure returned by IPython."
   (when (>= (url-http-parse-response) 400)
     (ob-ipython--dump-error (buffer-string)))
@@ -272,20 +277,20 @@ It replaces the output in the results."
       (with-current-buffer buffer
         (org-babel-goto-named-src-block name)
         (org-babel-remove-result))
-      (ob-ipython-clear-async-queue)) 
+      (ob-ipython-clear-async-queue session)) 
     json))
 
-(defun ob-ipython-clear-async-queue ()
-  "Clear the queue and all pending results."
+(defun ob-ipython-clear-async-queue (session)
+  "Clear the queue for a session and all pending results."
   (interactive)
-  (loop for (buffer body params name) in *ob-ipython-async-queue*
+  (loop for (buffer body params name) in (gethash session *ob-ipython-async-queue* nil)
 	do
 	(save-window-excursion
 	  (with-current-buffer buffer
 	    (org-babel-goto-named-src-block name)
 	    (org-babel-remove-result))))
-  (setq *ob-ipython-async-running-task* nil
-	*ob-ipython-async-queue* '()))
+  (remhash session *ob-ipython-async-running-task*)
+  (remhash session *ob-ipython-async-queue*))
 
 ;;
 ;; REPL setup
@@ -327,7 +332,8 @@ including the REPL buffers."
              (kill-buffer it))
            ipython-buffers)
     (setq kill-buffer-query-functions prev)
-    (ob-ipython-clear-async-queue)))
+    (--map (ob-ipython-clear-async-queue it)
+           (hash-table-keys *ob-ipython-async-queue*))))
 
 
 (provide 'ob-ipython-async)
